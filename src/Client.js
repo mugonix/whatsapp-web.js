@@ -901,20 +901,20 @@ class Client extends EventEmitter {
             sendMediaAsDocument: options.sendMediaAsDocument,
             caption: options.caption,
             quotedMessageId: options.quotedMessageId,
-            parseVCards: options.parseVCards,
+            parseVCards: options.parseVCards === false ? false : true,
             mentionedJidList: options.mentions || [],
             groupMentions: options.groupMentions,
             extraOptions: options.extra
         };
 
-        const sendSeen = options.sendSeen !== false;
+        const sendSeen = typeof options.sendSeen === 'undefined' ? true : options.sendSeen;
 
         if (content instanceof MessageMedia) {
-            internalOptions.media = content;
+            internalOptions.attachment = content;
             internalOptions.isViewOnce = options.isViewOnce,
             content = '';
         } else if (options.media instanceof MessageMedia) {
-            internalOptions.media = options.media;
+            internalOptions.attachment = options.media;
             internalOptions.caption = content;
             internalOptions.isViewOnce = options.isViewOnce,
             content = '';
@@ -942,8 +942,8 @@ class Client extends EventEmitter {
         }
 
         if (internalOptions.sendMediaAsSticker && internalOptions.media) {
-            internalOptions.media = await Util.formatToWebpSticker(
-                internalOptions.media, {
+            internalOptions.attachment = await Util.formatToWebpSticker(
+                internalOptions.attachment, {
                     name: options.stickerName,
                     author: options.stickerAuthor,
                     categories: options.stickerCategories
@@ -951,24 +951,20 @@ class Client extends EventEmitter {
             );
         }
 
-        const sentMsg = await this.pupPage.evaluate(async (chatId, content, options, sendSeen) => {
-            const chat = await window.WWebJS.getChat(chatId, { getAsModel: false });
+        const newMessage = await this.pupPage.evaluate(async (chatId, message, options, sendSeen) => {
+            const chatWid = window.Store.WidFactory.createWid(chatId);
+            const chat = await window.Store.Chat.find(chatWid);
 
-            if (!chat) return null;
 
             if (sendSeen) {
                 await window.WWebJS.sendSeen(chatId);
             }
 
-            const msg = await window.WWebJS.sendMessage(chat, content, options);
-            return msg
-                ? window.WWebJS.getMessageModel(msg)
-                : undefined;
+            const msg = await window.WWebJS.sendMessage(chat, message, options, sendSeen);
+            return window.WWebJS.getMessageModel(msg);
         }, chatId, content, internalOptions, sendSeen);
 
-        return sentMsg
-            ? new Message(this, sentMsg)
-            : undefined;
+        return new Message(this, newMessage);
     }
 
     /**
